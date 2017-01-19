@@ -447,4 +447,150 @@ NNVM_REGISTER_OP(_argmax)
 .set_num_inputs(1)
 .set_attr<FInferShape>("FInferShape", ReduceShape);
 
+
+struct ConcatParam : public dmlc::Parameter<ConcatParam> {
+  uint32_t axis;
+  DMLC_DECLARE_PARAMETER(ConcatParam) {
+    DMLC_DECLARE_FIELD(axis).set_default(0);
+  }
+};
+DMLC_REGISTER_PARAMETER(ConcatParam);
+
+NNVM_REGISTER_OP(concat)
+.describe("Concat tensors into one along one dimension.")
+.set_num_outputs(1)
+.set_attr_parser(ParamParser<ConcatParam>)
+.set_attr<FInferShape>("FInferShape", [](const NodeAttrs &attrs,
+                                         std::vector<TShape> *in_attrs,
+                                         std::vector<TShape> *out_attrs) {
+    auto axis = dmlc::get<ConcatParam>(attrs.parsed).axis;
+
+    CHECK_GT(in_attrs->size(), 0);
+    CHECK_EQ(out_attrs->size(), 1);
+
+    auto num_inputs = in_attrs->size();
+
+    auto out_shape = (*in_attrs)[0];
+    auto ndim = out_shape.ndim();
+    CHECK_LE(axis, ndim);
+
+    for (int i = 1; i < num_inputs; ++i) {
+        const auto &ishape = (*in_attrs)[i];
+        if (ishape.ndim() == 0) {
+            return false;
+        }
+        CHECK_EQ(ishape.ndim(), ndim);
+        for (int j = 0; j != ndim; ++j) {
+            if (j != axis && ishape[j] != out_shape[j]) {
+                LOG(FATAL) << "Incompatible shape in " << attrs.name;
+                return false;
+            }
+        }
+        out_shape[axis] += ishape[axis];
+    }
+    if ((*out_attrs)[0].ndim() != 0) {
+        CHECK_EQ(out_shape, (*out_attrs)[0]);
+    } else {
+        (*out_attrs)[0] = out_shape;
+    }
+    return true;
+})
+.set_attr<FGradient>("FGradient",
+                     [](const NodePtr& n, const std::vector<NodeEntry>& ograds) {
+    auto axis = dmlc::get<ConcatParam>(n->attrs.parsed).axis;
+    CHECK_EQ(ograds.size(), 1);
+
+    // split(ograds)
+    return std::vector<NodeEntry>{
+        MakeNode("split", n->attrs.name + "_grad", {ograds[0]},
+                    {
+                        {"axis", std::to_string(axis)},
+                        {"num_outputs", std::to_string(n->inputs.size())}
+                    })
+    };
+});
+
+struct SplitParam : public dmlc::Parameter<SplitParam> {
+  uint32_t axis;
+  uint32_t num_outputs;
+  DMLC_DECLARE_PARAMETER(SplitParam) {
+    DMLC_DECLARE_FIELD(axis).set_default(0);
+    DMLC_DECLARE_FIELD(num_outputs).set_default(2);
+  }
+};
+DMLC_REGISTER_PARAMETER(SplitParam);
+
+NNVM_REGISTER_OP(split)
+.describe("Splits a tensor into num_split tensors along one dimension.")
+.set_num_inputs(1)
+.set_attr_parser(ParamParser<SplitParam>)
+.set_num_outputs([](const nnvm::NodeAttrs& attrs) {
+    return dmlc::get<SplitParam>(attrs.parsed).num_outputs;
+})
+.set_attr<FInplaceOption>("FInplaceOption", [](const NodeAttrs& attrs) {
+    auto num_outputs = dmlc::get<SplitParam>(attrs.parsed).num_outputs;
+    std::vector<std::pair<int, int>> res;
+    res.reserve(num_outputs);
+    for (uint32_t i = 0; i != num_outputs; ++i) {
+        res.emplace_back(0, i);
+    }
+    return res;
+})
+.set_attr<FInferShape>("FInferShape", [](const NodeAttrs& attrs,
+                                         std::vector<TShape> *in_attrs,
+                                         std::vector<TShape> *out_attrs) {
+    auto num_outputs = dmlc::get<SplitParam>(attrs.parsed).num_outputs;
+    auto axis = dmlc::get<SplitParam>(attrs.parsed).axis;
+
+    CHECK_EQ(in_attrs->size(), 1);
+    CHECK_EQ(out_attrs->size(), num_outputs);
+
+    if ((*in_attrs)[0].ndim() != 0) {
+        TShape out_shape = (*in_attrs)[0];
+        CHECK_LT(axis, out_shape.ndim());
+        CHECK_EQ(out_shape[axis] % num_outputs, 0);
+        out_shape[axis] /= num_outputs;
+        for (auto &oshape : *out_attrs) {
+            if (oshape.ndim() == 0) {
+                oshape = out_shape;
+            } else {
+                if (oshape != out_shape) {
+                    LOG(FATAL) << "Incompatible shape in node " << attrs.name
+                               << " expected " << out_shape << " got " << oshape;
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    TShape out_shape;
+    for (auto &oshape : *out_attrs) {
+        if (oshape.ndim() != 0) {
+            if (out_shape.ndim() != 0 && out_shape != oshape) {
+                LOG(FATAL) << "";
+                return false;
+            }
+            out_shape = oshape;
+        } else if (out_shape.ndim() != 0) {
+            oshape = out_shape;
+        }
+    }
+    if (out_shape.ndim() != 0) {
+        CHECK_LT(axis, out_shape.ndim());
+        out_shape[axis] *= num_outputs;
+          (*in_attrs)[0] = out_shape;
+        return true;
+    }
+    return false;
+})
+.set_attr<FGradient>("FGradient",
+                     [](const NodePtr& n, const std::vector<NodeEntry>& ograds) {
+    auto axis = dmlc::get<SplitParam>(n->attrs.parsed).axis;
+    // concat(ograds)
+    return std::vector<NodeEntry>{
+        MakeNode("concat", n->attrs.name + "_grad",
+                 ograds, {{"axis", std::to_string(axis)}})
+    };
+});
 }  // namespace tinyflow
