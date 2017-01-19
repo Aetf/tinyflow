@@ -22,12 +22,13 @@ else:
 
 import ctypes as _ctypes
 from nnvm.name import NameManager
+from nnvm.attribute import AttrScope
 from nnvm._base import c_str, check_call, _LIB
 from nnvm import symbol, graph
 from nnvm import _symbol_internal
 
 __all__ = ["float32", "placeholder", "Variable", "group",
-           "initialize_all_variables", "gradients"]
+           "initialize_all_variables", "gradients", "attr_scope"]
 
 # data type table
 float32 = 0
@@ -48,7 +49,7 @@ def Variable(init=None, name=None):
 
 def initialize_all_variables():
     global _all_variable_inits
-    init_op = group(*_all_variable_inits)
+    init_op = group(*_all_variable_inits, name='variable_initializer')
     _all_variable_inits = []
     return init_op
 
@@ -58,8 +59,9 @@ def placeholder(dtype, shape=None, name=None):
     return v
 
 
-def group(*inputs):
-    x = _symbol_internal._nop()
+def group(*inputs, **kwargs):
+    name = kwargs['name'] if 'name' in kwargs else None
+    x = _symbol_internal._nop(name=name)
     x._add_control_deps(symbol.Group(inputs))
     return x
 
@@ -78,3 +80,6 @@ def gradients(ys, xs, grad_ys=None):
     nx = len(xs) if isinstance(xs, list) else len(xs.list_output_names())
     ret = [sym[i] for i in range(nx)]
     return ret
+
+def attr_scope(**kwargs):
+    return AttrScope(**kwargs)
