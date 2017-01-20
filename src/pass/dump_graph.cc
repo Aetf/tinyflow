@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 
 using std::cerr;
 using std::cout;
@@ -83,7 +84,19 @@ std::string id(const std::string &str) {
 Graph DotGraph(Graph src) {
     cout << "Begin DotGraph" << endl;
 
-    auto &out = cerr;
+    auto *pout = &cerr;
+    std::ofstream of;
+    auto it = src.attrs.find("dotgraph_output");
+    if (it != src.attrs.end()) {
+        auto path = dmlc::get<std::string>(*it->second);
+        of.open(path);
+        if (of) {
+            pout = &of;
+        } else {
+            LOG(INFO) << "dotgraph_output provided but invalid: " << path;
+        }
+    }
+    auto &out = *pout;
     out << "digraph graphname {" << endl;
 
     int index = 0;
