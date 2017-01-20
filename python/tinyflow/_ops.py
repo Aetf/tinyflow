@@ -18,3 +18,6 @@ def zeros(shape):
 
 def normal(shape, stdev=1.0):
     return symbol.normal(shape=shape, stdev=stdev)
+
+def reshape(x, shape, **kwargs):
+    return symbol.reshape(x, shape=shape, **kwargs)

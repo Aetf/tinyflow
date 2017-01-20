@@ -474,13 +474,13 @@ NNVM_REGISTER_OP(concat)
     auto ndim = out_shape.ndim();
     CHECK_LE(axis, ndim);
 
-    for (int i = 1; i < num_inputs; ++i) {
+    for (uint32_t i = 1; i < num_inputs; ++i) {
         const auto &ishape = (*in_attrs)[i];
         if (ishape.ndim() == 0) {
             return false;
         }
         CHECK_EQ(ishape.ndim(), ndim);
-        for (int j = 0; j != ndim; ++j) {
+        for (uint32_t j = 0; j != ndim; ++j) {
             if (j != axis && ishape[j] != out_shape[j]) {
                 LOG(FATAL) << "Incompatible shape in " << attrs.name;
                 return false;
@@ -501,13 +501,18 @@ NNVM_REGISTER_OP(concat)
     CHECK_EQ(ograds.size(), 1);
 
     // split(ograds)
-    return std::vector<NodeEntry>{
-        MakeNode("split", n->attrs.name + "_grad", {ograds[0]},
-                    {
-                        {"axis", std::to_string(axis)},
-                        {"num_outputs", std::to_string(n->inputs.size())}
-                    })
-    };
+    auto bpnode = MakeNode("split", n->attrs.name + "_grad", {ograds[0]},
+                           {
+                               {"axis", std::to_string(axis)},
+                               {"num_outputs", std::to_string(n->inputs.size())}
+                           }).node;
+    bpnode->control_deps.push_back(n);
+    std::vector<NodeEntry> res;
+    res.reserve(n->inputs.size());
+    for (uint32_t i = 0; i != n->inputs.size(); ++i) {
+        res.emplace_back(NodeEntry{bpnode, i, 0});
+    }
+    return res;
 });
 
 struct SplitParam : public dmlc::Parameter<SplitParam> {
@@ -588,9 +593,42 @@ NNVM_REGISTER_OP(split)
                      [](const NodePtr& n, const std::vector<NodeEntry>& ograds) {
     auto axis = dmlc::get<SplitParam>(n->attrs.parsed).axis;
     // concat(ograds)
-    return std::vector<NodeEntry>{
-        MakeNode("concat", n->attrs.name + "_grad",
-                 ograds, {{"axis", std::to_string(axis)}})
-    };
+    auto bpnode = MakeNode("concat", n->attrs.name + "_grad",
+                           ograds, {{"axis", std::to_string(axis)}}).node;
+    bpnode->control_deps.push_back(n);
+    return std::vector<NodeEntry>{ {bpnode, 0, 0} };
 });
+
+struct ReshapeParam : public dmlc::Parameter<ReshapeParam> {
+  TShape shape;
+  DMLC_DECLARE_PARAMETER(ReshapeParam) {
+    DMLC_DECLARE_FIELD(shape).set_default(TShape{});
+  }
+};
+DMLC_REGISTER_PARAMETER(ReshapeParam);
+
+NNVM_REGISTER_OP(reshape)
+.describe("reshape source to target shape")
+.set_num_inputs(1)
+.set_attr_parser(ParamParser<ReshapeParam>)
+.set_attr<FInferShape>(
+    "FInferShape", [] (const NodeAttrs& attrs,
+                       std::vector<TShape> *ishape,
+                       std::vector<TShape> *oshape) {
+      // get parsed attribute
+      const TShape& target = dmlc::get<ReshapeParam>(attrs.parsed).shape;
+      (*oshape)[0] = target;
+      if ((*ishape)[0].ndim() == 0) return false;
+      CHECK_EQ((*ishape)[0].Size(), target.Size())
+          << "Reshape op: source target shape mismatch";
+      return true;
+    })
+.set_attr<FInplaceOption>("FInplaceOption", InplaceIn0Out0)
+.set_attr<FGradient>("FGradient", [](const NodePtr &n, const std::vector<NodeEntry> &ograds) {
+    LOG(INFO) << "Here";
+    auto bpnode = MakeNode("reshape", n->attrs.name + "_grad", ograds, {{"shape", "[1]"}}).node;
+    bpnode->control_deps.push_back(n);
+    return std::vector<NodeEntry>{ {bpnode, 0, 0} };
+});
+
 }  // namespace tinyflow
