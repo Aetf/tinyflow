@@ -7,9 +7,12 @@
 #include <nnvm/pass_functions.h>
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 
+using std::cerr;
 using std::cout;
 using std::endl;
+using std::ostringstream;
 
 namespace nnvm {
 namespace pass {
@@ -62,10 +65,82 @@ Graph DumpGraph(Graph src) {
     return src;
 }
 
+std::string replaceAll(std::string str, const std::string& from, const std::string& to) {
+    if(from.empty())
+        return str;
+    size_t start_pos = 0;
+    while((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
+    }
+    return str;
+}
+
+std::string id(const std::string &str) {
+    return replaceAll(str, "/", "_");
+}
+
+Graph DotGraph(Graph src) {
+    cout << "Begin DotGraph" << endl;
+
+    auto &out = cerr;
+    out << "digraph graphname {" << endl;
+
+    int index = 0;
+    DFSVisit(src.outputs, [&index, &src, &out](const NodePtr &n) {
+        out << id(n->attrs.name);
+        out << " [";
+        if (!n->is_variable())
+            out << "shape=box,";
+        bool is_output = false;
+        for (const auto &e : src.outputs) {
+            if (e.node->attrs.name == n->attrs.name) {
+                is_output = true;
+                break;
+            }
+        }
+        if (is_output) {
+            out << "style=filled,fillcolor=gray,";
+        }
+        out << "label=\"";
+
+        ostringstream oss;
+        oss << "name: " << n->attrs.name << "\\l";
+        oss << "op: ";
+        if (n->is_variable())
+            oss << "variable";
+        else
+            oss << n->op()->name;
+        oss << "\\l";
+        if (n->attrs.dict.size() != 0)
+            oss << "attributes:" << "\\l";
+        for (const auto &attr : n->attrs.dict) {
+            oss << "    " << attr.first << ": " << attr.second << "\\l";
+        }
+        out << oss.str() << "\"" << "];" << endl;
+
+        for (const auto &entry : n->inputs) {
+            out << id(entry.node->attrs.name) << " -> " << id(n->attrs.name) << ";" << endl;
+        }
+        for (const NodePtr &d : n->control_deps) {
+            out << id(d->attrs.name) << " -> " << id(n->attrs.name);
+            out << " [style=dotted];" << endl;
+        }
+    });
+    out << "}" << endl;
+    cout << "End DotGraph" << endl;
+    return src;
+}
+
 // register pass
 NNVM_REGISTER_PASS(DumpGraph)
 .describe("Return the same Graph, prints out the graph")
 .set_body(DumpGraph)
+.set_change_graph(false);
+
+NNVM_REGISTER_PASS(DotGraph)
+.describe("Return the same Graph, prints out the graph in DOT format")
+.set_body(DotGraph)
 .set_change_graph(false);
 
 }  // namespace
