@@ -103,8 +103,13 @@ Graph DotGraph(Graph src) {
     DFSVisit(src.outputs, [&index, &src, &out](const NodePtr &n) {
         out << id(n->attrs.name);
         out << " [";
-        if (!n->is_variable())
-            out << "shape=box,";
+        bool is_placeholder = false;
+        if (!n->is_variable()) {
+            is_placeholder = n->op()->name == "placeholder";
+            if (!is_placeholder) {
+                out << "shape=box,";
+            }
+        }
         bool is_output = false;
         for (const auto &e : src.outputs) {
             if (e.node->attrs.name == n->attrs.name) {
@@ -113,7 +118,14 @@ Graph DotGraph(Graph src) {
             }
         }
         if (is_output) {
-            out << "style=filled,fillcolor=gray,";
+            out << "fillcolor=gray,";
+            if (is_placeholder) {
+                out << "style=\"filled,dashed\",";
+            } else {
+                out << "style=filled,";
+            }
+        } else if (is_placeholder) {
+            out << "style=dashed,";
         }
         out << "label=\"";
 
