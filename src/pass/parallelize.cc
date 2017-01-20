@@ -132,6 +132,13 @@ Graph Parallelize(Graph src) {
                     // get inputs
                     auto netinput = n->inputs[0];
                     auto new_inputs = n->inputs;
+                    // mark other inputs, which are shared among all replicas, as avg in grad_agg
+                    // TODO: not taking into account those inputs are possibly shared by nodes other
+                    // than replica we created here.
+                    for (uint32_t i = 1; i < new_inputs.size(); ++i) {
+                        const auto &e = new_inputs[i];
+                        e.node->attrs.dict["grad_aggregate_fun"] = "avg";
+                    }
                     // split data
                     auto nd_splited_netinput = MakeNode("split", n->attrs.name + "/split0",
                                                         {netinput},

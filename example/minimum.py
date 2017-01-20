@@ -54,8 +54,11 @@ sess.run(tf.initialize_all_variables())
 
 # Optimizer to train
 print('\n\nCreating optimizer')
-#train_step = tf.train.GradientDescentOptimizer(0.5).minimize(cross_entropy)
+train_step = tf.train.GradientDescentOptimizer(0.5).minimize(cross_entropy)
 
+g = graph.create(symbol.Group([y, cross_entropy, accuracy, train_step]))
+g._set_json_attr('dotgraph_output', '/tmp/workspace/grad.dot')
+g.apply('DotGraph')
 ## get the mnist dataset
 #mnist = get_mnist(flatten=True, onehot=True)
 #batch_xs, batch_ys = mnist.train.next_batch(100)
