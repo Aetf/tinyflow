@@ -36,3 +36,5 @@ cli_test
 *.pyc
 test.*
 log
+
+*.kdev4
