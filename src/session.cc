@@ -404,7 +404,7 @@ void TorchExecutor::SetupShapeDType(
   }
   graph_.attrs["shape"] = std::make_shared<any>(std::move(new_shape));
   graph_.attrs["dtype"] = std::make_shared<any>(std::move(new_dtype));
-  graph_ = ApplyPasses(std::move(graph_), {"InferShape", "InferType", "DumpGraph"});
+  graph_ = ApplyPasses(std::move(graph_), {"InferShape", "InferType"});
   CHECK_EQ(graph_.GetAttr<size_t>("shape_num_unknown_nodes"), 0)
       << "Shape information in the graph is in-complete";
   CHECK_EQ(graph_.GetAttr<size_t>("dtype_num_unknown_nodes"), 0)

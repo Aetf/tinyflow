@@ -92,7 +92,7 @@ Graph Parallelize(Graph src) {
                     // get two inputs
                     auto netinput = n->inputs[0];
                     auto weight = n->inputs[1];
-                    // split weight
+                    // split weight and netinput
                     auto nd_splited_weight = MakeNode("split", n->attrs.name + "/split0",
                                                       {weight}, {{"axis", "1"}, {"num_outputs", "2"}}).node;
                     auto nd_splited_netinput = MakeNode("split", n->attrs.name + "/split1",
@@ -107,6 +107,9 @@ Graph Parallelize(Graph src) {
                     auto part1 = MakeNode("matmul", n->attrs.name + "/part1",
                                           {{nd_splited_netinput, 1, 0}, {nd_splited_weight, 1, 0}},
                                           new_attrs).node;
+                    // preserve control deps
+                    part0->control_deps = n->control_deps;
+                    part1->control_deps = n->control_deps;
                     // merge output back, one merge operation per use site
                     const auto &sites = useSites[idxg.node_id(n.get())];
                     for (auto site : sites) {
@@ -124,6 +127,44 @@ Graph Parallelize(Graph src) {
                 }
             } else if (it->second == "data"){
                 // data
+                if (n->op()->name == "conv2d") {
+                    // only support data for conv2d
+                    // get inputs
+                    auto netinput = n->inputs[0];
+                    auto new_inputs = n->inputs;
+                    // split data
+                    auto nd_splited_netinput = MakeNode("split", n->attrs.name + "/split0",
+                                                        {netinput},
+                                                        {{"axis", "0"}, {"num_outputs", "2"}}).node;
+                    // actual compute
+                    auto new_attrs(n->attrs.dict);
+                    new_attrs.erase("parallelism");
+                    new_inputs[0] = {nd_splited_netinput, 0, 0};
+                    auto part0 = MakeNode("conv2d", n->attrs.name + "/part0",
+                                          new_inputs,
+                                          new_attrs).node;
+                    new_inputs[0] = {nd_splited_netinput, 1, 0};
+                    auto part1 = MakeNode("conv2d", n->attrs.name + "/part1",
+                                          new_inputs,
+                                          new_attrs).node;
+                    // preserve control deps
+                    part0->control_deps = n->control_deps;
+                    part1->control_deps = n->control_deps;
+                    // merge output back, one merge operation per use site
+                    const auto &sites = useSites[idxg.node_id(n.get())];
+                    for (auto site : sites) {
+                        if (!site.as_control_dep) {
+                            auto merged_out = MakeNode("concat", n->attrs.name + "/merge0",
+                            {{part0, 0, 0}, {part1, 0, 0}},
+                            {{"axis", "0"}}).node;
+                            if (!site.is_graph_output) {
+                                replaceUsage(idxg, site, {merged_out, 0, 0});
+                            } else {
+                                ret.outputs[site.user_input_idx] = {merged_out, 0, 0};
+                            }
+                        }
+                    }
+                }
             } else if (!it->second.empty()) {
                 throw dmlc::Error("Unknown attribute value for parallelism");
             }
