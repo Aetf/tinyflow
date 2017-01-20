@@ -458,6 +458,7 @@ DMLC_REGISTER_PARAMETER(ConcatParam);
 
 NNVM_REGISTER_OP(concat)
 .describe("Concat tensors into one along one dimension.")
+.set_num_inputs(nnvm::kVarg)
 .set_num_outputs(1)
 .set_attr_parser(ParamParser<ConcatParam>)
 .set_attr<FInferShape>("FInferShape", [](const NodeAttrs &attrs,
@@ -625,7 +626,7 @@ NNVM_REGISTER_OP(reshape)
     })
 .set_attr<FInplaceOption>("FInplaceOption", InplaceIn0Out0)
 .set_attr<FGradient>("FGradient", [](const NodePtr &n, const std::vector<NodeEntry> &ograds) {
-    LOG(INFO) << "Here";
+    LOG(WARNING) << "The shape information for gradient calculation is incorrect due to limitations in API";
     auto bpnode = MakeNode("reshape", n->attrs.name + "_grad", ograds, {{"shape", "[1]"}}).node;
     bpnode->control_deps.push_back(n);
     return std::vector<NodeEntry>{ {bpnode, 0, 0} };
