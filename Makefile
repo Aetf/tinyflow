@@ -1,4 +1,4 @@
-TORCH_PATH=${TORCH_HOME}
+TORCH_PATH=/usr/include/luajit-2.0
 
 ROOTDIR = $(CURDIR)
 
@@ -11,7 +11,7 @@ ifndef NNVM_PATH
 endif
 
 export LDFLAGS = -pthread -lm
-export CFLAGS =  -std=c++11 -Wall -O2 -msse2  -Wno-unknown-pragmas -funroll-loops\
+export CFLAGS =  -std=c++11 -Wall -g -msse2  -Wno-unknown-pragmas -funroll-loops\
 	  -fPIC -Iinclude -Idmlc-core/include -I$(NNVM_PATH)/include
 
 # whether use fusion
@@ -31,14 +31,14 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
 	WHOLE_ARCH= -all_load
 	NO_WHOLE_ARCH= -noall_load
-	CFLAGS  += -I$(TORCH_PATH)/install/include -I$(TORCH_PATH)/install/include/TH
+	CFLAGS  += -I$(TORCH_PATH)/install/include -I$(TORCH_PATH)/install/include/TH -I$(TORCH_PATH)
 	LDFLAGS += -L$(TORCH_PATH)/install/lib -llua -lluaT -lTH
 else
 	WHOLE_ARCH= --whole-archive
 	NO_WHOLE_ARCH= --no-whole-archive
 	CFLAGS  += -I$(TORCH_PATH)/install/include -I$(TORCH_PATH)/install/include/TH \
-			   -I$(TORCH_PATH)/install/include/THC/
-	LDFLAGS += -L$(TORCH_PATH)/install/lib -lluajit -lluaT -lTH -lTHC
+			   -I$(TORCH_PATH)/install/include/THC/ -I$(TORCH_PATH)
+	LDFLAGS += -L$(TORCH_PATH)/install/lib -lluajit-5.1 -lluaT -lTH
 endif
 
 SRC = $(wildcard src/*.cc src/*/*.cc src/*/*/*.cc)
